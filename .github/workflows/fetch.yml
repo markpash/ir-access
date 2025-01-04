@@ -22,7 +22,7 @@ jobs:
 
     # Step 3: Run the Go script
     - name: Run Go Script
-      run: go run main.go
+      run: go mod tidy && go run main.go
 
     # Step 4: Commit and push changes
     - name: Commit and push changes
@@ -30,5 +30,5 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git add ir_ranges_extracted_v4.txt ir_ranges_extracted_v6.txt
-        git commit -m "Update prefixes (auto-update)"
+        git commit -m "Update prefixes. (auto-update)"
         git push
