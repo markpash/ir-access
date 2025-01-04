@@ -1,0 +1,34 @@
+name: Fetch
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Run daily at midnight (UTC)
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  update-prefixes:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 1: Checkout the repository
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Step 2: Set up Go environment
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22'
+
+    # Step 3: Run the Go script
+    - name: Run Go Script
+      run: go run main.go
+
+    # Step 4: Commit and push changes
+    - name: Commit and push changes
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git add extracted_v4.txt extracted_v6.txt
+        git commit -m "Update prefixes (auto-update)"
+        git push
