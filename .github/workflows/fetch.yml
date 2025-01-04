@@ -14,7 +14,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Step 2: Set up Go environment
+    # Step 2: Set up the Go environment
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
@@ -29,6 +29,6 @@ jobs:
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add extracted_v4.txt extracted_v6.txt
+        git add ir_ranges_extracted_v4.txt ir_ranges_extracted_v6.txt
         git commit -m "Update prefixes (auto-update)"
         git push
