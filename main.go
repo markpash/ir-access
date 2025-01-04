@@ -17,8 +17,8 @@ import (
 const (
 	url          = "https://bgp.tools/table.jsonl" // URL for the JSONL table dump
 	userAgent    = "bgp.tools script"              // Custom User-Agent header
-	outputFileV4 = "ir_iranges_extracted_v4.txt"   // Output file for IPv4 prefixes
-	outputFileV6 = "ir_iranges_extracted_v6.txt"   // Output file for IPv6 prefixes
+	outputFileV4 = "ir_prefixes_v4.txt"            // Output file for IPv4 prefixes
+	outputFileV6 = "ir_prefixes_v6.txt"            // Output file for IPv6 prefixes
 	retries      = 3                               // Number of retries for HTTP fetch
 )
 
@@ -99,45 +99,42 @@ func filterPrefixesByASN(prefixes []Prefix, asns []int) ([]netip.Prefix, []netip
 		asnSet[asn] = struct{}{}
 	}
 
-	v4Chan := make(chan netip.Prefix, 100)
-	v6Chan := make(chan netip.Prefix, 100)
-	done := make(chan struct{})
-
 	var v4Prefixes, v6Prefixes []netip.Prefix
-	go func() {
-		for {
-			select {
-			case p := <-v4Chan:
-				v4Prefixes = append(v4Prefixes, p)
-			case p := <-v6Chan:
-				v6Prefixes = append(v6Prefixes, p)
-			case <-done:
-				return
+	for _, prefix := range prefixes {
+		if _, exists := asnSet[prefix.ASN]; exists {
+			if prefix.CIDR.Addr().Is4() {
+				v4Prefixes = append(v4Prefixes, prefix.CIDR)
+			} else if prefix.CIDR.Addr().Is6() {
+				v6Prefixes = append(v6Prefixes, prefix.CIDR)
 			}
 		}
-	}()
-
-	var wg sync.WaitGroup
-	for _, prefix := range prefixes {
-		wg.Add(1)
-		go func(p Prefix) {
-			defer wg.Done()
-			if _, exists := asnSet[p.ASN]; exists {
-				if p.CIDR.Addr().Is4() {
-					v4Chan <- p.CIDR
-				} else if p.CIDR.Addr().Is6() {
-					v6Chan <- p.CIDR
-				}
-			}
-		}(prefix)
 	}
 
-	wg.Wait()
-	close(done)
-	close(v4Chan)
-	close(v6Chan)
+	return deduplicatePrefixes(v4Prefixes), deduplicatePrefixes(v6Prefixes)
+}
 
-	return v4Prefixes, v6Prefixes
+// Deduplicates prefixes by removing overlaps, keeping only broader ones
+func deduplicatePrefixes(prefixes []netip.Prefix) []netip.Prefix {
+	// Sort prefixes by prefix length (shorter first for broader prefixes)
+	sort.Slice(prefixes, func(i, j int) bool {
+		return prefixes[i].Bits() < prefixes[j].Bits()
+	})
+
+	var result []netip.Prefix
+	for _, current := range prefixes {
+		overlap := false
+		for _, existing := range result {
+			if existing.Contains(current.Addr()) {
+				overlap = true
+				break
+			}
+		}
+		if !overlap {
+			result = append(result, current)
+		}
+	}
+
+	return result
 }
 
 // Writes sorted prefixes to a file
