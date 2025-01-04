@@ -22,13 +22,21 @@ jobs:
 
     # Step 3: Run the Go script
     - name: Run Go Script
-      run: go mod tidy && go run main.go
+      run: go mod init ir-ranges && sleep 1 && go mod tidy && sleep 1 && go run main.go
 
     # Step 4: Commit and push changes
     - name: Commit and push changes
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add ir_ranges_extracted_v4.txt ir_ranges_extracted_v6.txt
-        git commit -m "Update prefixes. (auto-update)"
-        git push
+
+        # Ensure untracked files are added
+        git add -A
+
+        # Commit only if there are changes
+        if ! git diff --cached --quiet; then
+          git commit -m "Update prefixes (auto-update)"
+          git push
+        else
+          echo "No changes detected. Skipping commit."
+        fi
