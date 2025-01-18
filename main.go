@@ -92,7 +92,7 @@ func fetchPrefixes(url string, client *http.Client) ([]Prefix, error) {
 	return prefixes, nil
 }
 
-// Filters prefixes by ASN and separates IPv4/IPv6 using channels
+// Filters prefixes by ASN without deduplication or de-overlapping
 func filterPrefixesByASN(prefixes []Prefix, asns []int) ([]netip.Prefix, []netip.Prefix) {
 	asnSet := make(map[int]struct{})
 	for _, asn := range asns {
@@ -110,31 +110,7 @@ func filterPrefixesByASN(prefixes []Prefix, asns []int) ([]netip.Prefix, []netip
 		}
 	}
 
-	return deduplicatePrefixes(v4Prefixes), deduplicatePrefixes(v6Prefixes)
-}
-
-// Deduplicates prefixes by removing overlaps, keeping only broader ones
-func deduplicatePrefixes(prefixes []netip.Prefix) []netip.Prefix {
-	// Sort prefixes by prefix length (shorter first for broader prefixes)
-	sort.Slice(prefixes, func(i, j int) bool {
-		return prefixes[i].Bits() < prefixes[j].Bits()
-	})
-
-	var result []netip.Prefix
-	for _, current := range prefixes {
-		overlap := false
-		for _, existing := range result {
-			if existing.Contains(current.Addr()) {
-				overlap = true
-				break
-			}
-		}
-		if !overlap {
-			result = append(result, current)
-		}
-	}
-
-	return result
+	return v4Prefixes, v6Prefixes
 }
 
 // Writes sorted prefixes to a file
