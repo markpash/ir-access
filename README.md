@@ -22,7 +22,7 @@ Ensure the following dependencies are installed on your system:
 
 ### Linux:
 
-All binaries are available in two versions: `amd64` and `arm64`.
+All binaries are available in `amd64` and `arm64`.
 
 1.
     ```
@@ -87,8 +87,7 @@ Run the application with the following options:
   sudo ./ir-access --setup
   ```
 
-### Note that for now, only Ubuntu _(>20)_ and Debian _(>10)_ are supported for the `-s` or `—-setup` flag.
-
+#### Note that for now, only Ubuntu _(>20)_ and Debian _(>10)_ are supported for the `-s` or `—-setup` flag.
 
 ## How It Works
 
@@ -102,16 +101,6 @@ Run the application with the following options:
     - Detects the SSH port from `/etc/ssh/sshd_config`.
     - Configures firewall rules to allow only Iranian traffic.
     - Applies and verifies the nftables rules.
-
-## Logging
-
-The application logs operations with timestamps and severity levels, such as:
-
-```
-[INFO]  2025-01-19 15:30: Fetching IP prefixes...
-[WARN]  2025-01-19 15:31: Skipping invalid JSON line
-[ERROR] 2025-01-19 15:32: Failed to apply nftables configuration
-```
 
 ## License
 
