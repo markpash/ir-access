@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Prepare
+sudo apt update -qy
+sudo apt install -qy nftables
+
 # Define input files for prefixes
 IPv4_FILE="ir_prefixes_v4.txt"
 IPv6_FILE="ir_prefixes_v6.txt"
@@ -18,7 +22,7 @@ flush ruleset
 # Create the main table
 table inet filter {
     set allowed_ipv4 {
-        type ipv4_addr; flags interval;
+        type ipv4_addr; flags interval; auto-merge;
         elements = {
 EOF
 
