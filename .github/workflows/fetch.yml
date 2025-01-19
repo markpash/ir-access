@@ -23,15 +23,9 @@ jobs:
     # Step 3: Run the Go script
     - name: Run the Go Script
       run: |
-        # Initialize the Go module if needed
-        if [ ! -f go.mod ]; then
-          go mod init ir-access
-        fi
-
-        # Tidy dependencies and run the script
+        go mod init ir-access
         go mod tidy
-        go build
-        go run ir-access -f
+        go run main.go -f
 
     # Step 4: Commit and push changes
     - name: Commit and push changes
