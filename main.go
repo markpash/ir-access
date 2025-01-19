@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"net/netip"
 	"os"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 )
@@ -92,7 +92,7 @@ func fetchPrefixes(url string, client *http.Client) ([]Prefix, error) {
 	return prefixes, nil
 }
 
-// Filters prefixes by ASN without deduplication or de-overlapping
+// Filters prefixes by ASN
 func filterPrefixesByASN(prefixes []Prefix, asns []int) ([]netip.Prefix, []netip.Prefix) {
 	asnSet := make(map[int]struct{})
 	for _, asn := range asns {
@@ -113,8 +113,45 @@ func filterPrefixesByASN(prefixes []Prefix, asns []int) ([]netip.Prefix, []netip
 	return v4Prefixes, v6Prefixes
 }
 
+// Converts IPv4 prefixes to /24 blocks and writes them to a channel
+func processPrefixTo24(prefix netip.Prefix, prefixChan chan<- string) {
+	ip := prefix.Addr()
+	prefixLen := prefix.Bits()
+
+	if prefixLen == 24 {
+		prefixChan <- prefix.String()
+		return
+	}
+
+	ipInt := ipToInt(ip)
+	numBlocks := 1 << (24 - prefixLen) // Calculate the number of /24 blocks
+	for i := 0; i < numBlocks; i++ {
+		ip := intToIP(ipInt)
+		prefixChan <- netip.PrefixFrom(ip, 24).String()
+		incrementIPBy24(ipInt)
+	}
+}
+
+func ipToInt(ip netip.Addr) *big.Int {
+	ipInt := big.NewInt(0)
+	ipInt.SetBytes(ip.AsSlice())
+	return ipInt
+}
+
+func intToIP(ipInt *big.Int) netip.Addr {
+	ipBytes := make([]byte, 4)
+	ipInt.FillBytes(ipBytes)
+	ip, _ := netip.AddrFromSlice(ipBytes)
+	return ip
+}
+
+func incrementIPBy24(ipInt *big.Int) {
+	increment := big.NewInt(1 << 8) // 256 for /24
+	ipInt.Add(ipInt, increment)
+}
+
 // Writes sorted prefixes to a file
-func writePrefixesToFile(prefixes []netip.Prefix, outputFile string) error {
+func writePrefixesToFileV4(prefixes []netip.Prefix, outputFile string) error {
 	if len(prefixes) == 0 {
 		logMessage("INFO", "No prefixes to write to %s", outputFile)
 		return nil
@@ -129,26 +166,81 @@ func writePrefixesToFile(prefixes []netip.Prefix, outputFile string) error {
 	writer := bufio.NewWriter(outFile)
 	defer writer.Flush()
 
-	sort.Slice(prefixes, func(i, j int) bool {
-		return strings.Compare(prefixes[i].String(), prefixes[j].String()) < 0
-	})
+	uniquePrefixes := make(map[string]struct{})
+	prefixChan := make(chan string, len(prefixes))
+	var wg sync.WaitGroup
 
 	for _, prefix := range prefixes {
+		wg.Add(1)
+		go func(p netip.Prefix) {
+			defer wg.Done()
+			processPrefixTo24(p, prefixChan)
+		}(prefix)
+	}
+
+	go func() {
+		wg.Wait()
+		close(prefixChan)
+	}()
+
+	for prefix := range prefixChan {
+		uniquePrefixes[prefix] = struct{}{}
+	}
+
+	sortedPrefixes := make([]string, 0, len(uniquePrefixes))
+	for prefix := range uniquePrefixes {
+		sortedPrefixes = append(sortedPrefixes, prefix)
+	}
+
+	sort.Strings(sortedPrefixes)
+	for _, prefix := range sortedPrefixes {
+		if _, err := writer.WriteString(prefix + "\n"); err != nil {
+			return fmt.Errorf("writing to file: %w", err)
+		}
+	}
+
+	logMessage("INFO", "Wrote %d /24 prefixes to %s", len(sortedPrefixes), outputFile)
+	return nil
+}
+
+// Writes IPv6 prefixes to a file without modification
+func writePrefixesToFileV6(prefixes []netip.Prefix, outputFile string) error {
+	if len(prefixes) == 0 {
+		logMessage("INFO", "No prefixes to write to %s", outputFile)
+		return nil
+	}
+
+	outFile, err := os.Create(outputFile)
+	if err != nil {
+		return fmt.Errorf("creating output file: %w", err)
+	}
+	defer outFile.Close()
+
+	writer := bufio.NewWriter(outFile)
+	defer writer.Flush()
+
+	sortedPrefixes := make([]netip.Prefix, len(prefixes))
+	copy(sortedPrefixes, prefixes)
+	sort.Slice(sortedPrefixes, func(i, j int) bool {
+		return sortedPrefixes[i].String() < sortedPrefixes[j].String()
+	})
+
+	for _, prefix := range sortedPrefixes {
 		if _, err := writer.WriteString(prefix.String() + "\n"); err != nil {
 			return fmt.Errorf("writing to file: %w", err)
 		}
 	}
 
-	logMessage("INFO", "Wrote %d prefixes to %s", len(prefixes), outputFile)
+	logMessage("INFO", "Wrote %d IPv6 prefixes to %s", len(sortedPrefixes), outputFile)
 	return nil
 }
 
 func main() {
-	// List of ASNs to filter
 	asnsToFilter := []int{
 		197207, 44244, 25184, 41689, 12880, 49100, 41881, 50810,
 		47330, 48159, 58224, 42337, 24631, 39501, 51469, 205647,
-		31549, 57218, 25124, 42440, 60976, 16322,
+		31549, 57218, 25124, 42440, 60976, 16322, 59441, 207724,
+		208264, 60423, 49022,
 	}
 
 	logMessage("INFO", "Starting processing for ASNs: %v", asnsToFilter)
@@ -162,20 +254,19 @@ func main() {
 
 	v4Prefixes, v6Prefixes := filterPrefixesByASN(prefixes, asnsToFilter)
 
-	// Write IPv4 and IPv6 prefixes concurrently
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		if err := writePrefixesToFile(v4Prefixes, outputFileV4); err != nil {
+		if err := writePrefixesToFileV4(v4Prefixes, outputFileV4); err != nil {
 			logMessage("ERROR", "Writing IPv4 prefixes: %v", err)
 		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		if err := writePrefixesToFile(v6Prefixes, outputFileV6); err != nil {
+		if err := writePrefixesToFileV6(v6Prefixes, outputFileV6); err != nil {
 			logMessage("ERROR", "Writing IPv6 prefixes: %v", err)
 		}
 	}()
