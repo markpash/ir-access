@@ -14,7 +14,7 @@
 
 Ensure the following dependencies are installed on your system:
 
-- **Go (>=1.18)**
+- **Go (>=1.22)**
 - **nftables**
 - **sudo privileges** (for setup operation)
 
