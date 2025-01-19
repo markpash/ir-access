@@ -15,11 +15,11 @@ import (
 )
 
 const (
-	url          = "https://bgp.tools/table.jsonl" // URL for the JSONL table dump
-	userAgent    = "bgp.tools script"              // Custom User-Agent header
-	outputFileV4 = "ir_prefixes_v4.txt"            // Output file for IPv4 prefixes
-	outputFileV6 = "ir_prefixes_v6.txt"            // Output file for IPv6 prefixes
-	retries      = 3                               // Number of retries for HTTP fetch
+	url          = "https://bgp.tools/table.jsonl"          // URL for the JSONL table dump
+	userAgent    = "irgfw bgp.tools - contact@irgfw.report" // Custom User-Agent header
+	outputFileV4 = "ir_prefixes_v4.txt"                     // Output file for IPv4 prefixes
+	outputFileV6 = "ir_prefixes_v6.txt"                     // Output file for IPv6 prefixes
+	retries      = 3                                        // Number of retries for HTTP fetch
 )
 
 // Enhanced logging setup
@@ -199,7 +199,7 @@ func writePrefixesToFileV4(prefixes []netip.Prefix, outputFile string) error {
 		}
 	}
 
-	logMessage("INFO", "Wrote %d /24 prefixes to %s", len(sortedPrefixes), outputFile)
+	logMessage("INFO", "Wrote %d IPv4 /24 prefixes to %s", len(sortedPrefixes), outputFile)
 	return nil
 }
 
@@ -239,8 +239,11 @@ func main() {
 	asnsToFilter := []int{
 		197207, 44244, 25184, 41689, 12880, 49100, 41881, 50810,
 		47330, 48159, 58224, 42337, 24631, 39501, 51469, 205647,
-		31549, 57218, 25124, 42440, 60976, 16322, 59441, 207724,
-		208264, 60423, 49022,
+		31549, 57218, 25124, 42440, 60976, 16322, 59573, 48944,
+		48431, 43395, 56548, 204834, 206065, 197343, 204650,
+		48309, 200370, 213775, 215655, 202391, 201150, 206495, 60627,
+		204393, 212939, 51235, 49847, 49847, 43212, 43754, 51074,
+		44400, 204203, 39074,
 	}
 
 	logMessage("INFO", "Starting processing for ASNs: %v", asnsToFilter)
