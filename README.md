@@ -26,7 +26,7 @@ All binaries are available in `amd64` and `arm64`.
 
 1.
     ```
-    wget "https://github.com/irgfw/ir-access/releases/latest/download/ir-access-$(uname -s | tr A-Z a-z)-amd64" -O ir-access && chmod +x ir-access
+    wget "https://github.com/irgfw/ir-access/releases/latest/download/ir-access-linux-amd64" -O ir-access && chmod +x ir-access
     ```
 2. 
     ```
