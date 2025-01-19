@@ -18,19 +18,19 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '~1.23.0'
+        go-version: '1.23.5'
 
     # Step 3: Run the Go script
     - name: Run the Go Script
       run: |
         # Initialize the Go module if needed
         if [ ! -f go.mod ]; then
-          go mod init ir-ranges
+          go mod init ir-access
         fi
 
         # Tidy dependencies and run the script
         go mod tidy
-        go run main.go
+        go run main.go -f
 
     # Step 4: Commit and push changes
     - name: Commit and push changes
