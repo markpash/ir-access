@@ -30,7 +30,8 @@ jobs:
 
         # Tidy dependencies and run the script
         go mod tidy
-        go run main.go -f
+        go build
+        go run ir-access -f
 
     # Step 4: Commit and push changes
     - name: Commit and push changes
