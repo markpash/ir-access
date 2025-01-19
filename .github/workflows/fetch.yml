@@ -1,4 +1,4 @@
-name: Fetch
+name: Fetch And Commit
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch: # Allows manual trigger
 
 jobs:
-  fetch:
+  fetch-and-commit:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,9 +23,14 @@ jobs:
     # Step 3: Run the Go script
     - name: Run the Go Script
       run: |
-        go mod init ir-access
+        # Initialize the Go module if needed
+        if [ ! -f go.mod ]; then
+          go mod init ir-access
+        fi
+
+        # Tidy dependencies and run the script
         go mod tidy
-        go run main.go -f
+        go run main.go fetch_prefixes.go setup_nftables.go -f
 
     # Step 4: Commit and push changes
     - name: Commit and push changes
