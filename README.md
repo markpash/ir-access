@@ -18,7 +18,31 @@ Ensure the following dependencies are installed on your system:
 - **nftables**
 - **sudo privileges** (for setup operation)
 
-## Installation
+## Run
+
+### Linux:
+
+All binaries are available in two versions: `amd64` and `arm64`.
+
+1.
+    ```
+    wget "https://github.com/irgfw/ir-access/releases/latest/download/ir-access-$(uname -s | tr A-Z a-z)-amd64" -O ir-access && chmod +x ir-access
+    ```
+2. 
+    ```
+    ./ir-access -f
+    ```
+    
+### Windows:
+
+1. Download from [Releases](https://github.com/irgfw/ir-access/releases/latest).
+2. Open `CMD` or `Powershell` in the directory.
+3.
+    ```
+    .\ir-access-windows-amd64.exe --fetch
+    ```
+
+## Build
 
 1. Clone the repository:
 
@@ -62,6 +86,9 @@ Run the application with the following options:
   ```sh
   sudo ./ir-access --setup
   ```
+
+### Note that for now, only Ubuntu _(>20)_ and Debian _(>10)_ are supported for the `-s` or `—-setup` flag.
+
 
 ## How It Works
 
