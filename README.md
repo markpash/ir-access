@@ -87,7 +87,7 @@ Run the application with the following options:
   sudo ./ir-access --setup
   ```
 
-#### Note that for now, only Ubuntu _(>22)_ and Debian _(>10)_ are supported for the `-s` or `—-setup` flag.
+#### Note that for now, only Ubuntu _(>22)_ and Debian _(>11)_ are supported for the `-s` or `—-setup` flag.
 
 ## How It Works
 
