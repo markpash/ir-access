@@ -1,39 +1,16 @@
 package main
 
 import (
-	"flag"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+
+	"github.com/peterbourgon/ff/v4"
+	"github.com/peterbourgon/ff/v4/ffhelp"
 )
 
 const appName = "ir-access"
-
-// Function to display help message
-func showUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", appName)
-	fmt.Println("Options:")
-	fmt.Println("  -f, --fetch     Fetch all Iranian IP prefixes from bgp.tools.")
-	fmt.Println("  -s, --setup     Set up nftables rules to Iran-Access-Only except SSH port (fetch will run automatically).")
-	fmt.Println("  -h, --help      Show this help message.")
-	os.Exit(0)
-}
-
-// Process command-line arguments and replace short flags with their long counterparts
-func handleShortFlags() {
-	for i, arg := range os.Args {
-		switch arg {
-		case "-h":
-			showUsage()
-		case "-f":
-			os.Args[i] = "--fetch"
-		case "-s":
-			os.Args[i] = "--setup"
-		case "-v":
-			os.Args[i] = "--verbose"
-		}
-	}
-}
 
 // Execute fetch operation
 func fetch(l *slog.Logger) {
@@ -50,20 +27,19 @@ func setup(l *slog.Logger) {
 
 func main() {
 	// Define command-line flags
-	fetchFlag := flag.Bool("fetch", false, "Fetch all Iranian IP prefixes from bgp.tools.")
-	setupFlag := flag.Bool("setup", false, "Set up nftables rules to Iran-Access-Only except SSH port.")
-	verboseFlag := flag.Bool("verbose", false, "Verbose logging")
+	fs := ff.NewFlagSet(appName)
+	fetchFlag := fs.Bool('f', "fetch", "Fetch all Iranian IP prefixes from bgp.tools.")
+	setupFlag := fs.Bool('s', "setup", "Set up nftables rules to Iran-Access-Only except SSH port.")
+	verboseFlag := fs.Bool('v', "verbose", "Enable verbose logging")
 
-	// Handle short flags (-f, -s)
-	handleShortFlags()
-
-	// Parse command-line flags
-	flag.Parse()
-
-	// Check if no options were provided
-	if len(os.Args) < 2 {
-		fmt.Println("Error: No options provided")
-		showUsage()
+	err := ff.Parse(fs, os.Args[1:])
+	switch {
+	case errors.Is(err, ff.ErrHelp):
+		fmt.Fprintf(os.Stderr, "%s\n", ffhelp.Flags(fs))
+		os.Exit(0)
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
 
 	l := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -78,7 +54,8 @@ func main() {
 	case *fetchFlag:
 		fetch(l)
 	default:
-		fmt.Println("Error: Invalid or missing options")
-		showUsage()
+		fmt.Fprintf(os.Stderr, "error: invalid or missing options\n")
+		fmt.Fprintf(os.Stderr, "%s\n", ffhelp.Flags(fs))
+		os.Exit(1)
 	}
 }
