@@ -3,48 +3,29 @@ name: Fetch And Commit
 on:
   schedule:
     - cron: '0 0 * * *' # Run daily at midnight (UTC)
-  workflow_dispatch: # Allows manual trigger
+  workflow_dispatch:
 
 jobs:
   fetch-and-commit:
     runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: 0
 
     steps:
-    # Step 1: Checkout the repository
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Step 2: Set up the Go environment
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: '1.23.5'
+        check-latest: true
 
-    # Step 3: Run the Go script
     - name: Run the Go Script
-      run: |
-        # Initialize the Go module if needed
-        if [ ! -f go.mod ]; then
-          go mod init ir-access
-        fi
+      run: go run . -f -v
 
-        # Tidy dependencies and run the script
-        go mod tidy
-        go run main.go fetch_prefixes.go setup_nftables.go -f
-
-    # Step 4: Commit and push changes
-    - name: Commit and push changes
-      run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-        # Ensure untracked files are added
-        git add -A
-
-        # Commit only if there are changes
-        if ! git diff --cached --quiet; then
-          git commit -m "Update prefixes (auto-update)"
-          git push
-        else
-          echo "No changes detected. Skipping commit."
-        fi
+    - name: commit
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: Update prefixes (auto-update)
+        file_pattern: 'ir_prefixes_v4.txt ir_prefixes_v6.txt'
