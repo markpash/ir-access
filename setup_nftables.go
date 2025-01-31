@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"regexp"
@@ -24,19 +25,19 @@ func runCommand(name string, args ...string) error {
 	return cmd.Run()
 }
 
-func prepare() {
-	fmt.Println("\nPreparing nftables setup...\n")
+func prepare(l *slog.Logger) {
+	l.Info("Preparing nftables setup...")
 	time.Sleep(500 * time.Millisecond)
 	runCommand("sudo", "apt", "update", "-qq")
 	time.Sleep(500 * time.Millisecond)
 	runCommand("sudo", "apt", "install", "-qqy", "nftables")
 }
 
-func findSSHPort() string {
-	fmt.Println("\nFinding SSH port...")
+func findSSHPort(l *slog.Logger) string {
+	l.Info("finding SSH port")
 	file, err := os.Open(sshConfigPath)
 	if err != nil {
-		fmt.Println("\nSSH configuration file not found, using default port 22.")
+		l.Warn("SSH configuration file not found, using default port 22")
 		return "22"
 	}
 	defer file.Close()
@@ -45,12 +46,12 @@ func findSSHPort() string {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		if match := re.FindStringSubmatch(scanner.Text()); match != nil {
-			fmt.Printf("\nSSH port found: %s\n", match[1])
+			l.Info("SSH port found", "port", match[1])
 			return match[1]
 		}
 	}
 
-	fmt.Println("\nSSH port is default 22.")
+	l.Info("SSH port is default 22")
 	return "22"
 }
 
@@ -72,24 +73,24 @@ func readPrefixes(filePath string) ([]string, error) {
 	return prefixes, nil
 }
 
-func initializeNftablesConf(sshPort string) {
-	fmt.Println("\nInitializing nftables configuration...")
+func initializeNftablesConf(l *slog.Logger, sshPort string) {
+	l.Info("initializing nftables configuration")
 
 	ipv4Prefixes, err := readPrefixes(ipv4File)
 	if err != nil {
-		fmt.Println(err)
+		l.Error("failed to read prefixes file", "family", "v4", "error", err)
 		ipv4Prefixes = []string{}
 	}
 
 	ipv6Prefixes, err := readPrefixes(ipv6File)
 	if err != nil {
-		fmt.Println(err)
+		l.Error("failed to read prefixes file", "family", "v6", "error", err)
 		ipv6Prefixes = []string{}
 	}
 
 	file, err := os.Create(nftablesConf)
 	if err != nil {
-		fmt.Println("Error creating nftables.conf:", err)
+		l.Error("error creating nftables.conf", "error", err)
 		return
 	}
 	defer file.Close()
@@ -151,45 +152,45 @@ table inet filter {
 
 	_, err = file.WriteString(config)
 	if err != nil {
-		fmt.Println("Error writing nftables.conf:", err)
+		l.Error("failed writing nftables.conf", "error", err)
 	}
 
-	fmt.Println("\nNFTables configuration initialized.")
+	l.Info("nftables configuration initialized")
 }
 
-func applyNftables() {
-	fmt.Println("\nApplying nftables configuration...\n")
+func applyNftables(l *slog.Logger) {
+	l.Info("applying nftables configuration")
 	time.Sleep(500 * time.Millisecond)
 
 	err := runCommand("sudo", "nft", "-f", nftablesConf)
 	if err != nil {
-		fmt.Println("Error: Failed to apply nftables configuration.")
+		l.Error("failed to apply nftables configuration", "error", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Enabling nftables service...\n")
+	l.Info("enabling nftables service")
 	runCommand("sudo", "systemctl", "enable", "nftables")
 	runCommand("sudo", "systemctl", "start", "nftables")
-	fmt.Println("Configuration applied and nftables service started.\n")
+	l.Info("configuration applied and nftables service started")
 }
 
-func verifyNftables() {
-	fmt.Println("\nVerifying nftables ruleset...\n")
+func verifyNftables(l *slog.Logger) {
+	l.Info("verifying nftables ruleset")
 	runCommand("sudo", "nft", "list", "ruleset")
 }
 
-func startSetupNftables() {
-	prepare()
+func startSetupNftables(l *slog.Logger) {
+	prepare(l)
 	time.Sleep(time.Second)
-	sshPort := findSSHPort()
+	sshPort := findSSHPort(l)
 	time.Sleep(time.Second)
-	initializeNftablesConf(sshPort)
+	initializeNftablesConf(l, sshPort)
 	time.Sleep(time.Second)
-	applyNftables()
+	applyNftables(l)
 	time.Sleep(time.Second)
-	verifyNftables()
+	verifyNftables(l)
 	time.Sleep(time.Second)
 
-	fmt.Println("\nNftables setup is complete. Your server is now Iran-Access-Only except for SSH port.")
-	fmt.Printf("Configuration is saved in %s.\n", nftablesConf)
+	l.Info("nftables setup is complete. Your server is now Iran-Access-Only except for SSH port")
+	l.Info("configuration is saved", "file", nftablesConf)
 }

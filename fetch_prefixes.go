@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"net/netip"
@@ -22,19 +22,6 @@ const (
 	retries      = 3                                        // Number of retries for HTTP fetch
 )
 
-// Enhanced logging setup
-func init() {
-	log.SetFlags(0)   // Disable default timestamp
-	log.SetPrefix("") // No default prefix
-}
-
-// Custom logger function
-func logMessage(level string, msg string, args ...interface{}) {
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	formattedLevel := fmt.Sprintf("[%s]", level)
-	fmt.Printf("%s %-7s %s\n", timestamp, formattedLevel, fmt.Sprintf(msg, args...))
-}
-
 // Prefix structure for JSON parsing
 type Prefix struct {
 	CIDR netip.Prefix `json:"CIDR"`
@@ -42,22 +29,22 @@ type Prefix struct {
 }
 
 // Fetch prefixes with retry logic
-func fetchPrefixesWithRetry(url string, client *http.Client, retries int) ([]Prefix, error) {
+func fetchPrefixesWithRetry(l *slog.Logger, url string, client *http.Client, retries int) ([]Prefix, error) {
 	var prefixes []Prefix
 	var err error
 	for i := 0; i < retries; i++ {
-		prefixes, err = fetchPrefixes(url, client)
+		prefixes, err = fetchPrefixes(l, url, client)
 		if err == nil {
 			return prefixes, nil
 		}
-		logMessage("WARN", "Fetch failed (attempt %d/%d): %v", i+1, retries, err)
+		l.Warn("fetch failed", "attempt", i+1, "max", retries, "error", err)
 		time.Sleep(2 * time.Second) // Backoff between retries
 	}
 	return nil, fmt.Errorf("all fetch attempts failed: %w", err)
 }
 
 // Fetches prefixes from the URL
-func fetchPrefixes(url string, client *http.Client) ([]Prefix, error) {
+func fetchPrefixes(l *slog.Logger, url string, client *http.Client) ([]Prefix, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -79,7 +66,7 @@ func fetchPrefixes(url string, client *http.Client) ([]Prefix, error) {
 	for scanner.Scan() {
 		var prefix Prefix
 		if err := json.Unmarshal(scanner.Bytes(), &prefix); err != nil {
-			logMessage("WARN", "Skipping invalid JSON line: %v", err)
+			l.Warn("skipping invalid JSON line", "error", err)
 			continue
 		}
 		prefixes = append(prefixes, prefix)
@@ -151,9 +138,9 @@ func incrementIPBy24(ipInt *big.Int) {
 }
 
 // Writes sorted prefixes to a file
-func writePrefixesToFileV4(prefixes []netip.Prefix, outputFile string) error {
+func writePrefixesToFileV4(l *slog.Logger, prefixes []netip.Prefix, outputFile string) error {
 	if len(prefixes) == 0 {
-		logMessage("INFO", "No prefixes to write to %s", outputFile)
+		l.Info("no prefixes to write", "family", "v4")
 		return nil
 	}
 
@@ -199,14 +186,14 @@ func writePrefixesToFileV4(prefixes []netip.Prefix, outputFile string) error {
 		}
 	}
 
-	logMessage("INFO", "Wrote %d IPv4 /24 prefixes to %s", len(sortedPrefixes), outputFile)
+	l.Info("wrote IPv4 /24 prefixes to file", "count", len(sortedPrefixes), "file", outputFile)
 	return nil
 }
 
 // Writes IPv6 prefixes to a file without modification
-func writePrefixesToFileV6(prefixes []netip.Prefix, outputFile string) error {
+func writePrefixesToFileV6(l *slog.Logger, prefixes []netip.Prefix, outputFile string) error {
 	if len(prefixes) == 0 {
-		logMessage("INFO", "No prefixes to write to %s", outputFile)
+		l.Info("no prefixes to write", "family", "v6")
 		return nil
 	}
 
@@ -231,17 +218,17 @@ func writePrefixesToFileV6(prefixes []netip.Prefix, outputFile string) error {
 		}
 	}
 
-	logMessage("INFO", "Wrote %d IPv6 prefixes to %s", len(sortedPrefixes), outputFile)
+	l.Info("wrote IPv6 prefixes to file", "count", len(sortedPrefixes), "file", outputFile)
 	return nil
 }
 
-func startFetchPrefixes() {
-	logMessage("INFO", "Starting processing for ASNs: %v", asnsToFilter())
+func startFetchPrefixes(l *slog.Logger) {
+	l.Info("starting processing for ASNs", "asns", asnsToFilter())
 
 	client := &http.Client{}
-	prefixes, err := fetchPrefixesWithRetry(url, client, retries)
+	prefixes, err := fetchPrefixesWithRetry(l, url, client, retries)
 	if err != nil {
-		logMessage("ERROR", "Fetching prefixes failed: %v", err)
+		l.Error("fetching prefixes failed", "error", err)
 		return
 	}
 
@@ -252,18 +239,18 @@ func startFetchPrefixes() {
 
 	go func() {
 		defer wg.Done()
-		if err := writePrefixesToFileV4(v4Prefixes, outputFileV4); err != nil {
-			logMessage("ERROR", "Writing IPv4 prefixes: %v", err)
+		if err := writePrefixesToFileV4(l, v4Prefixes, outputFileV4); err != nil {
+			l.Error("writing IPv4 prefixes", "error", err)
 		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		if err := writePrefixesToFileV6(v6Prefixes, outputFileV6); err != nil {
-			logMessage("ERROR", "Writing IPv6 prefixes: %v", err)
+		if err := writePrefixesToFileV6(l, v6Prefixes, outputFileV6); err != nil {
+			l.Error("writing IPv6 prefixes", "error", err)
 		}
 	}()
 
 	wg.Wait()
-	logMessage("INFO", "Processing complete.")
+	l.Info("processing complete")
 }

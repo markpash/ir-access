@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 )
 
@@ -10,7 +11,7 @@ const appName = "ir-access"
 
 // Function to display help message
 func showUsage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", appName)
 	fmt.Println("Options:")
 	fmt.Println("  -f, --fetch     Fetch all Iranian IP prefixes from bgp.tools.")
 	fmt.Println("  -s, --setup     Set up nftables rules to Iran-Access-Only except SSH port (fetch will run automatically).")
@@ -28,27 +29,30 @@ func handleShortFlags() {
 			os.Args[i] = "--fetch"
 		case "-s":
 			os.Args[i] = "--setup"
+		case "-v":
+			os.Args[i] = "--verbose"
 		}
 	}
 }
 
 // Execute fetch operation
-func fetch() {
-	fmt.Println("Fetching IP prefixes...")
-	startFetchPrefixes()
+func fetch(l *slog.Logger) {
+	l.Info("fetching IP prefixes")
+	startFetchPrefixes(l)
 }
 
 // Execute setup operation
-func setup() {
-	fmt.Println("Running fetch operation before setup...")
-	fetch() // Ensure fetch is executed before setup
-	startSetupNftables()
+func setup(l *slog.Logger) {
+	l.Info("running fetch operation before setup...")
+	fetch(l) // Ensure fetch is executed before setup
+	startSetupNftables(l)
 }
 
 func main() {
 	// Define command-line flags
 	fetchFlag := flag.Bool("fetch", false, "Fetch all Iranian IP prefixes from bgp.tools.")
 	setupFlag := flag.Bool("setup", false, "Set up nftables rules to Iran-Access-Only except SSH port.")
+	verboseFlag := flag.Bool("verbose", false, "Verbose logging")
 
 	// Handle short flags (-f, -s)
 	handleShortFlags()
@@ -58,18 +62,23 @@ func main() {
 
 	// Check if no options were provided
 	if len(os.Args) < 2 {
-		fmt.Println("Error: No options provided.\n")
+		fmt.Println("Error: No options provided")
 		showUsage()
+	}
+
+	l := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	if *verboseFlag {
+		l = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
 
 	// Execute operations based on flags
 	switch {
 	case *setupFlag:
-		setup()
+		setup(l)
 	case *fetchFlag:
-		fetch()
+		fetch(l)
 	default:
-		fmt.Println("Error: Invalid or missing options.\n")
+		fmt.Println("Error: Invalid or missing options")
 		showUsage()
 	}
 }
