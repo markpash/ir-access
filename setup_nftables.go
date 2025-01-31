@@ -28,9 +28,9 @@ func runCommand(name string, args ...string) error {
 func prepare(l *slog.Logger) {
 	l.Info("Preparing nftables setup...")
 	time.Sleep(500 * time.Millisecond)
-	runCommand("sudo", "apt", "update", "-qq")
+	runCommand("apt", "update", "-qq")
 	time.Sleep(500 * time.Millisecond)
-	runCommand("sudo", "apt", "install", "-qqy", "nftables")
+	runCommand("apt", "install", "-qqy", "nftables")
 }
 
 func findSSHPort(l *slog.Logger) string {
@@ -162,21 +162,21 @@ func applyNftables(l *slog.Logger) {
 	l.Info("applying nftables configuration")
 	time.Sleep(500 * time.Millisecond)
 
-	err := runCommand("sudo", "nft", "-f", nftablesConf)
+	err := runCommand("nft", "-f", nftablesConf)
 	if err != nil {
 		l.Error("failed to apply nftables configuration", "error", err)
 		os.Exit(1)
 	}
 
 	l.Info("enabling nftables service")
-	runCommand("sudo", "systemctl", "enable", "nftables")
-	runCommand("sudo", "systemctl", "start", "nftables")
+	runCommand("systemctl", "enable", "nftables")
+	runCommand("systemctl", "start", "nftables")
 	l.Info("configuration applied and nftables service started")
 }
 
 func verifyNftables(l *slog.Logger) {
 	l.Info("verifying nftables ruleset")
-	runCommand("sudo", "nft", "list", "ruleset")
+	runCommand("nft", "list", "ruleset")
 }
 
 func startSetupNftables(l *slog.Logger) {
