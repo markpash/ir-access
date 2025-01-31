@@ -48,7 +48,7 @@ jobs:
           GOOS: ${{ env.GOOS }}
           EXT: ${{ env.EXT }}
         run: |
-          CGO_ENABLED=0 go build -o IR-Access-${{ env.GOOS }}-${{ matrix.arch }}${{ env.EXT }} .
+          CGO_ENABLED=0 go build -o IR-Access-${{ env.GOOS }}-${{ matrix.arch }}${{ env.EXT }} -ldflags "-X main.version=${{ github.ref }}" .
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4

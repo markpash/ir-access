@@ -6,11 +6,14 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/carlmjohnson/versioninfo"
 	"github.com/peterbourgon/ff/v4"
 	"github.com/peterbourgon/ff/v4/ffhelp"
 )
 
 const appName = "ir-access"
+
+var version string = ""
 
 // Execute fetch operation
 func fetch(l *slog.Logger) {
@@ -31,6 +34,7 @@ func main() {
 	fetchFlag := fs.Bool('f', "fetch", "Fetch all Iranian IP prefixes from bgp.tools.")
 	setupFlag := fs.Bool('s', "setup", "Set up nftables rules to Iran-Access-Only except SSH port.")
 	verboseFlag := fs.Bool('v', "verbose", "Enable verbose logging")
+	versionFlag := fs.BoolLong("version", "displays version number")
 
 	err := ff.Parse(fs, os.Args[1:])
 	switch {
@@ -40,6 +44,14 @@ func main() {
 	case err != nil:
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
+	}
+
+	if *versionFlag {
+		if version == "" {
+			version = versioninfo.Short()
+		}
+		fmt.Fprintf(os.Stderr, "%s\n", version)
+		os.Exit(0)
 	}
 
 	l := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
