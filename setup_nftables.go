@@ -25,14 +25,6 @@ func runCommand(name string, args ...string) error {
 	return cmd.Run()
 }
 
-func prepare(l *slog.Logger) {
-	l.Info("Preparing nftables setup...")
-	time.Sleep(500 * time.Millisecond)
-	runCommand("apt", "update", "-qq")
-	time.Sleep(500 * time.Millisecond)
-	runCommand("apt", "install", "-qqy", "nftables")
-}
-
 func findSSHPort(l *slog.Logger) string {
 	l.Info("finding SSH port")
 	file, err := os.Open(sshConfigPath)
@@ -180,8 +172,6 @@ func verifyNftables(l *slog.Logger) {
 }
 
 func startSetupNftables(l *slog.Logger) {
-	prepare(l)
-	time.Sleep(time.Second)
 	sshPort := findSSHPort(l)
 	time.Sleep(time.Second)
 	initializeNftablesConf(l, sshPort)
