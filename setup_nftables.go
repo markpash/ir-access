@@ -7,15 +7,17 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	ipv4File      = "ir_prefixes_v4.txt"
-	ipv6File      = "ir_prefixes_v6.txt"
-	nftablesConf  = "/etc/nftables.conf"
-	sshConfigPath = "/etc/ssh/sshd_config"
+	ipv4File       = "ir_prefixes_v4.txt"
+	ipv6File       = "ir_prefixes_v6.txt"
+	nftablesConf   = "/etc/nftables.conf"
+	sshdConfigPath = "/etc/ssh/sshd_config"
+	defaultSSHPort = 22
 )
 
 func runCommand(name string, args ...string) error {
@@ -25,26 +27,41 @@ func runCommand(name string, args ...string) error {
 	return cmd.Run()
 }
 
-func findSSHPort(l *slog.Logger) string {
+func findSSHPort(l *slog.Logger) (uint16, error) {
 	l.Info("finding SSH port")
-	file, err := os.Open(sshConfigPath)
+
+	file, err := os.Open(sshdConfigPath)
 	if err != nil {
-		l.Warn("SSH configuration file not found, using default port 22")
-		return "22"
+		return 0, fmt.Errorf("could not open sshd configuration at %s: %w", sshdConfigPath, err)
 	}
 	defer file.Close()
 
+	found := false
+	port := uint16(0)
 	re := regexp.MustCompile(`^Port\s+(\d+)`)
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		if match := re.FindStringSubmatch(scanner.Text()); match != nil {
-			l.Info("SSH port found", "port", match[1])
-			return match[1]
+		match := re.FindStringSubmatch(scanner.Text())
+		if match == nil {
+			continue
 		}
+
+		m, err := strconv.ParseUint(match[1], 10, 16)
+		if err != nil {
+			l.Warn("fail to parse Port", "error", err)
+			continue
+		}
+
+		port = uint16(m)
+		found = true
+		break
 	}
 
-	l.Info("SSH port is default 22")
-	return "22"
+	if !found {
+		return 0, fmt.Errorf("couldn't find port in sshd configuration")
+	}
+
+	return port, nil
 }
 
 func readPrefixes(filePath string) ([]string, error) {
@@ -65,7 +82,7 @@ func readPrefixes(filePath string) ([]string, error) {
 	return prefixes, nil
 }
 
-func initializeNftablesConf(l *slog.Logger, sshPort string) {
+func initializeNftablesConf(l *slog.Logger, sshdPort uint16) error {
 	l.Info("initializing nftables configuration")
 
 	ipv4Prefixes, err := readPrefixes(ipv4File)
@@ -80,10 +97,13 @@ func initializeNftablesConf(l *slog.Logger, sshPort string) {
 		ipv6Prefixes = []string{}
 	}
 
+	if len(ipv4Prefixes) == 0 && len(ipv6Prefixes) == 0 {
+		return fmt.Errorf("prefix lists empty")
+	}
+
 	file, err := os.Create(nftablesConf)
 	if err != nil {
-		l.Error("error creating nftables.conf", "error", err)
-		return
+		return fmt.Errorf("error creating nftables.conf: %w", err)
 	}
 	defer file.Close()
 
@@ -118,8 +138,8 @@ table inet filter {
         type filter hook input priority filter; policy drop;
         ct state established,related accept
         iif lo accept
-        tcp dport %s accept
-`, sshPort)
+        tcp dport %d accept
+`, sshdPort)
 
 	// Add conditions based on the sets
 	if len(ipv4Prefixes) > 0 {
@@ -142,45 +162,61 @@ table inet filter {
 }
 `
 
-	_, err = file.WriteString(config)
-	if err != nil {
-		l.Error("failed writing nftables.conf", "error", err)
+	if _, err = file.WriteString(config); err != nil {
+		return fmt.Errorf("failed writing nftables.conf: %w", err)
 	}
 
-	l.Info("nftables configuration initialized")
+	return nil
 }
 
-func applyNftables(l *slog.Logger) {
+func applyNftables(l *slog.Logger) error {
 	l.Info("applying nftables configuration")
-	time.Sleep(500 * time.Millisecond)
 
-	err := runCommand("nft", "-f", nftablesConf)
-	if err != nil {
-		l.Error("failed to apply nftables configuration", "error", err)
-		os.Exit(1)
+	if err := runCommand("nft", "-f", nftablesConf); err != nil {
+		return fmt.Errorf("failed to apply nftables configuration: %w", err)
 	}
 
-	l.Info("enabling nftables service")
-	runCommand("systemctl", "enable", "nftables")
-	runCommand("systemctl", "start", "nftables")
-	l.Info("configuration applied and nftables service started")
+	if err := runCommand("systemctl", "enable", "--now", "nftables"); err != nil {
+		return fmt.Errorf("failed to enable and start nftables services: %w", err)
+	}
+
+	return nil
 }
 
-func verifyNftables(l *slog.Logger) {
+func verifyNftables(l *slog.Logger) error {
 	l.Info("verifying nftables ruleset")
-	runCommand("nft", "list", "ruleset")
+	return runCommand("nft", "list", "ruleset")
 }
 
-func startSetupNftables(l *slog.Logger) {
-	sshPort := findSSHPort(l)
+func startSetupNftables(l *slog.Logger) error {
+	sshdPort, err := findSSHPort(l)
+	if err != nil {
+		sshdPort = defaultSSHPort
+		l.Warn(fmt.Sprintf("couldn't find port from sshd configuration file, using default %d", sshdPort))
+	}
+
+	if err := initializeNftablesConf(l, sshdPort); err != nil {
+		return fmt.Errorf("failed to initialize nftables configuration: %w", err)
+	}
+	l.Info("nftables configuration initialized")
+
 	time.Sleep(time.Second)
-	initializeNftablesConf(l, sshPort)
+
+	if err := applyNftables(l); err != nil {
+		return fmt.Errorf("failed to apply nftables configuration: %w", err)
+	}
+	l.Info("configuration applied and nftables service started")
+
 	time.Sleep(time.Second)
-	applyNftables(l)
-	time.Sleep(time.Second)
-	verifyNftables(l)
+
+	if err := verifyNftables(l); err != nil {
+		return fmt.Errorf("failed to verify nftables ruleset: %w", err)
+	}
+
 	time.Sleep(time.Second)
 
 	l.Info("nftables setup is complete. Your server is now Iran-Access-Only except for SSH port")
 	l.Info("configuration is saved", "file", nftablesConf)
+
+	return nil
 }
