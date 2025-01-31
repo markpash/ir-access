@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
+	"runtime"
 
 	"github.com/carlmjohnson/versioninfo"
 	"github.com/peterbourgon/ff/v4"
@@ -22,10 +24,26 @@ func fetch(l *slog.Logger) {
 }
 
 // Execute setup operation
-func setup(l *slog.Logger) {
+func setup(l *slog.Logger) error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("setup only works on linux")
+	}
+
+	_, err := exec.LookPath("nft")
+	if err != nil {
+		return fmt.Errorf("nft command not found")
+	}
+
+	_, err = exec.LookPath("systemctl")
+	if err != nil {
+		return fmt.Errorf("systemctl command not found")
+	}
+
 	l.Info("running fetch operation before setup...")
 	fetch(l) // Ensure fetch is executed before setup
 	startSetupNftables(l)
+
+	return nil
 }
 
 func main() {
@@ -62,7 +80,9 @@ func main() {
 	// Execute operations based on flags
 	switch {
 	case *setupFlag:
-		setup(l)
+		if err := setup(l); err != nil {
+			fatal(l, err)
+		}
 	case *fetchFlag:
 		fetch(l)
 	default:
@@ -70,4 +90,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s\n", ffhelp.Flags(fs))
 		os.Exit(1)
 	}
+}
+
+func fatal(l *slog.Logger, err error) {
+	l.Error(err.Error())
+	os.Exit(1)
 }
