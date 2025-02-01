@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,7 +10,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 )
@@ -101,22 +102,24 @@ func filterPrefixesByASN(prefixes []Prefix, asns []int) ([]netip.Prefix, []netip
 }
 
 // Converts IPv4 prefixes to /24 blocks and writes them to a channel
-func processPrefixTo24(prefix netip.Prefix, prefixChan chan<- string) {
+func processPrefixTo24(prefix netip.Prefix) []netip.Prefix {
 	ip := prefix.Addr()
 	prefixLen := prefix.Bits()
 
 	if prefixLen == 24 {
-		prefixChan <- prefix.String()
-		return
+		return []netip.Prefix{prefix}
 	}
 
 	ipInt := ipToInt(ip)
 	numBlocks := 1 << (24 - prefixLen) // Calculate the number of /24 blocks
+	splitPrefixes := make([]netip.Prefix, numBlocks)
 	for i := 0; i < numBlocks; i++ {
 		ip := intToIP(ipInt)
-		prefixChan <- netip.PrefixFrom(ip, 24).String()
+		splitPrefixes[i] = netip.PrefixFrom(ip, 24)
 		incrementIPBy24(ipInt)
 	}
+
+	return splitPrefixes
 }
 
 func ipToInt(ip netip.Addr) *big.Int {
@@ -137,6 +140,17 @@ func incrementIPBy24(ipInt *big.Int) {
 	ipInt.Add(ipInt, increment)
 }
 
+// https://cs.opensource.google/go/go/+/refs/tags/go1.23.5:src/net/netip/netip.go;l=1312
+func prefixCompare(a, b netip.Prefix) int {
+	if c := cmp.Compare(a.Addr().BitLen(), b.Addr().BitLen()); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(a.Bits(), b.Bits()); c != 0 {
+		return c
+	}
+	return a.Addr().Compare(b.Addr())
+}
+
 // Writes sorted prefixes to a file
 func writePrefixesToFileV4(l *slog.Logger, prefixes []netip.Prefix, outputFile string) error {
 	if len(prefixes) == 0 {
@@ -153,35 +167,22 @@ func writePrefixesToFileV4(l *slog.Logger, prefixes []netip.Prefix, outputFile s
 	writer := bufio.NewWriter(outFile)
 	defer writer.Flush()
 
-	uniquePrefixes := make(map[string]struct{})
-	prefixChan := make(chan string, len(prefixes))
-	var wg sync.WaitGroup
-
+	uniquePrefixes := make(map[netip.Prefix]struct{})
 	for _, prefix := range prefixes {
-		wg.Add(1)
-		go func(p netip.Prefix) {
-			defer wg.Done()
-			processPrefixTo24(p, prefixChan)
-		}(prefix)
+		split := processPrefixTo24(prefix)
+		for _, p := range split {
+			uniquePrefixes[p] = struct{}{}
+		}
 	}
 
-	go func() {
-		wg.Wait()
-		close(prefixChan)
-	}()
-
-	for prefix := range prefixChan {
-		uniquePrefixes[prefix] = struct{}{}
-	}
-
-	sortedPrefixes := make([]string, 0, len(uniquePrefixes))
+	sortedPrefixes := make([]netip.Prefix, 0, len(uniquePrefixes))
 	for prefix := range uniquePrefixes {
 		sortedPrefixes = append(sortedPrefixes, prefix)
 	}
 
-	sort.Strings(sortedPrefixes)
+	slices.SortFunc(sortedPrefixes, prefixCompare)
 	for _, prefix := range sortedPrefixes {
-		if _, err := writer.WriteString(prefix + "\n"); err != nil {
+		if _, err := writer.WriteString(prefix.String() + "\n"); err != nil {
 			return fmt.Errorf("writing to file: %w", err)
 		}
 	}
@@ -208,9 +209,7 @@ func writePrefixesToFileV6(l *slog.Logger, prefixes []netip.Prefix, outputFile s
 
 	sortedPrefixes := make([]netip.Prefix, len(prefixes))
 	copy(sortedPrefixes, prefixes)
-	sort.Slice(sortedPrefixes, func(i, j int) bool {
-		return sortedPrefixes[i].String() < sortedPrefixes[j].String()
-	})
+	slices.SortFunc(sortedPrefixes, prefixCompare)
 
 	for _, prefix := range sortedPrefixes {
 		if _, err := writer.WriteString(prefix.String() + "\n"); err != nil {
