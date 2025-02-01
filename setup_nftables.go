@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"os/exec"
 	"regexp"
@@ -64,19 +65,23 @@ func findSSHPort(l *slog.Logger) (uint16, error) {
 	return port, nil
 }
 
-func readPrefixes(filePath string) ([]string, error) {
+func readPrefixes(filePath string) ([]netip.Prefix, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("error: file '%s' not found", filePath)
 	}
 	defer file.Close()
 
-	var prefixes []string
+	var prefixes []netip.Prefix
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line != "" {
-			prefixes = append(prefixes, line)
+			prefix, err := netip.ParsePrefix(line)
+			if err != nil {
+				return nil, fmt.Errorf("failed parsing prefix: '%s': %w", line, err)
+			}
+			prefixes = append(prefixes, prefix)
 		}
 	}
 	return prefixes, nil
@@ -88,17 +93,23 @@ func initializeNftablesConf(l *slog.Logger, sshdPort uint16) error {
 	ipv4Prefixes, err := readPrefixes(ipv4File)
 	if err != nil {
 		l.Error("failed to read prefixes file", "family", "v4", "error", err)
-		ipv4Prefixes = []string{}
+		ipv4Prefixes = []netip.Prefix{}
 	}
 
 	ipv6Prefixes, err := readPrefixes(ipv6File)
 	if err != nil {
 		l.Error("failed to read prefixes file", "family", "v6", "error", err)
-		ipv6Prefixes = []string{}
+		ipv6Prefixes = []netip.Prefix{}
 	}
 
 	if len(ipv4Prefixes) == 0 && len(ipv6Prefixes) == 0 {
 		return fmt.Errorf("prefix lists empty")
+	}
+
+	// Render nftables config
+	config, err := renderNftablesTemplate(sshdPort, ipv4Prefixes, ipv6Prefixes)
+	if err != nil {
+		return err
 	}
 
 	file, err := os.Create(nftablesConf)
@@ -106,61 +117,6 @@ func initializeNftablesConf(l *slog.Logger, sshdPort uint16) error {
 		return fmt.Errorf("error creating nftables.conf: %w", err)
 	}
 	defer file.Close()
-
-	// Define default configuration
-	config := `#!/usr/sbin/nft -f
-
-flush ruleset
-
-table inet filter {
-`
-
-	// Add IPv4 set if not empty
-	if len(ipv4Prefixes) > 0 {
-		config += `    set allowed_ipv4 {
-        type ipv4_addr; flags interval; auto-merge;
-        elements = {` + strings.Join(ipv4Prefixes, ",\n") + `}
-    }
-`
-	}
-
-	// Add IPv6 set if not empty
-	if len(ipv6Prefixes) > 0 {
-		config += `    set allowed_ipv6 {
-        type ipv6_addr; flags interval; auto-merge;
-        elements = {` + strings.Join(ipv6Prefixes, ",\n") + `}
-    }
-`
-	}
-
-	// Add the chain configuration
-	config += fmt.Sprintf(`    chain input {
-        type filter hook input priority filter; policy drop;
-        ct state established,related accept
-        iif lo accept
-        tcp dport %d accept
-`, sshdPort)
-
-	// Add conditions based on the sets
-	if len(ipv4Prefixes) > 0 {
-		config += `        ip saddr @allowed_ipv4 accept
-`
-	}
-	if len(ipv6Prefixes) > 0 {
-		config += `        ip6 saddr @allowed_ipv6 accept
-`
-	}
-
-	// Close configuration
-	config += `    }
-    chain forward {
-        type filter hook forward priority filter; policy drop;
-    }
-    chain output {
-        type filter hook output priority filter; policy accept;
-    }
-}
-`
 
 	if _, err = file.WriteString(config); err != nil {
 		return fmt.Errorf("failed writing nftables.conf: %w", err)
