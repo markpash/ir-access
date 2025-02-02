@@ -80,6 +80,6 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         if: github.event_name == 'release'
         with:
-          file: ./build/ir-access_${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}_${{ env.GITHUB_SHA }}.zip*
+          file: ./build/ir-access_${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}.zip*
           tag: ${{ github.ref }}
           file_glob: true
