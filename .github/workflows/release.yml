@@ -1,12 +1,10 @@
 name: Build and Release
 
 on:
+  workflow_dispatch:
+  release:
+    types: [published]
   push:
-    tags:
-      - '*'
-
-env:
-  BIN_PATH: /tmp/bin
 
 jobs:
   build:
@@ -15,8 +13,32 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        arch: [amd64, arm64]
+        include:
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: linux
+            goarch: arm
+            goarm: 7
+
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+          - goos: windows
+            goarch: 386
+
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      GOARM: ${{ matrix.goarm }}
+      CGO_ENABLED: 0
 
     steps:
       - name: Checkout code
@@ -26,57 +48,38 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.23.5'
-          cache: false
-
-      - name: Run go mod tidy
-        run: go mod tidy
-
-      - name: Set environment variables
-        run: |
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            echo "GOOS=linux" >> $GITHUB_ENV
-          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
-            echo "GOOS=darwin" >> $GITHUB_ENV
-          else
-            echo "GOOS=windows" >> $GITHUB_ENV
-            echo "EXT=.exe" >> $GITHUB_ENV
-          fi
+          check-latest: true
 
       - name: Build binary
-        env:
-          GOARCH: ${{ matrix.arch }}
-          GOOS: ${{ env.GOOS }}
-          EXT: ${{ env.EXT }}
         run: |
-          CGO_ENABLED=0 go build -o IR-Access-${{ env.GOOS }}-${{ matrix.arch }}${{ env.EXT }} .
+          go build -v \
+          -o build/ir-access_${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}/ \
+          -trimpath -ldflags "-s -w -buildid= -X main.version=${{ github.ref }}" .
+
+      - name: Create ZIP archive
+        shell: bash
+        run: |
+          pushd ./build/ir-access_${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }} || exit 1
+          touch -mt $(date +%Y01010000) *
+          zip -9vr ../ir-access_${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}.zip .
+          popd || exit 1
+          FILE=./build/ir-access_${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}.zip
+          DGST=$FILE.dgst
+          for METHOD in {"md5","sha256","sha512"}
+          do
+            openssl dgst -$METHOD $FILE | sed 's/([^)]*)//g' >>$DGST
+          done
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
-          name: IR-Access-${{ env.GOOS }}-${{ matrix.arch }}${{ env.EXT }}
-          path: IR-Access-${{ env.GOOS }}-${{ matrix.arch }}${{ env.EXT }}
+          name: ir-access_${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}_${{ env.GITHUB_SHA }}
+          path: ./build/ir-access_${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}/*
 
-  release:
-    name: Create GitHub Release
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Create bin directory
-        run: |
-          mkdir -p ${{ env.BIN_PATH }}
-
-      - name: Download binaries
-        uses: actions/download-artifact@v4
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        if: github.event_name == 'release'
         with:
-          path: ${{ env.BIN_PATH }}
-          pattern: IR-Access-*
-          merge-multiple: true
-
-      - name: Display structure of downloaded files
-        run: ls -R ${{ env.BIN_PATH }}
-
-      - name: Release with assets
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.BIN_PATH }}/*
+          file: ./build/ir-access_${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}_${{ env.GITHUB_SHA }}.zip*
+          tag: ${{ github.ref }}
+          file_glob: true
